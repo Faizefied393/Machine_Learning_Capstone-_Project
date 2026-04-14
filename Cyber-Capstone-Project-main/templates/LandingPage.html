@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Machine-learning tool to detect whooping cranes in images" />
+  <title>Whooping Crane Detector</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <!-- ────── Header ────── -->
+  <header><h1>Whooping Crane Detector</h1></header>
+
+  <div class="content">
+    <div class="buttons">
+      <!-- --- Upload Form --- -->
+      <form id="upload-form">
+        <input id="fileInput" type="file" multiple webkitdirectory />
+        <br /><br />
+        <button type="submit">Upload &amp; Process</button>
+      </form>
+
+      <!-- status + download -->
+      <div id="status" style="margin-top:20px;font-weight:bold;"></div>
+      <a id="download-btn"
+         style="display:none;margin-top:20px;"
+         class="btn btn-primary"
+         download>
+        Download Results ZIP
+      </a>
+    </div>
+
+    <!-- decorative images (unchanged) -->
+    <div class="images">
+      <div class="cranes">
+        <img class="crane1" src="{{ url_for('static', filename='_DS38628 whcr search S.jpg') }}">
+        <img class="crane2" src="{{ url_for('static', filename='_LS35170 2 whcr flying sm.jpg') }}">
+      </div>
+      <div class="cameras">
+        <img class="img1" src="{{ url_for('static', filename='510+ Surveillance Camera Pillar Stock Photos, Pictures & Royalty-Free  Images - iStock.png') }}">
+        <img class="img2" src="{{ url_for('static', filename='Front View Of Surveillance Camera Against Nature Background Stock Photo -  Download Image Now.png') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── JavaScript ──────
+  <script>
+  document.getElementById("upload-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const statusEl   = document.getElementById("status");
+    const downloadEl = document.getElementById("download-btn");
+    downloadEl.style.display = "none";
+    statusEl.textContent = "";
+
+    const files = Array.from(document.getElementById("fileInput").files);
+    if (!files.length) {
+      alert("Please select at least one file.");
+      return;
+    }
+
+    /* 1. build S3 keys */
+    const ts   = Date.now();
+    const keys = files.map(f => `uploads/${ts}/${f.name}`);
+
+    /* 2. ask Flask for presigned URLs */
+    statusEl.textContent = "Requesting upload URLs…";
+    const pres = await fetch("/generate-presigned-urls", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({filenames: keys})
+    }).then(r => r.json());
+
+    /* 3. PUT each file to S3 */
+    statusEl.textContent = "Uploading to S3…";
+    await Promise.all(pres.map(({filename, url}) => {
+      const file = files.find(f => f.name === filename.split("/").pop());
+      return fetch(url, {method:"PUT", body:file});
+    }));
+
+    /* 4. start Lambda job (fire-and-forget) */
+    statusEl.textContent = "Processing images…";
+    const {job_id} = await fetch("/start-job", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({keys})
+    }).then(r => r.json());
+
+    /* 5. poll /job-status until ready */
+    let downloadUrl = null;
+    while (true) {
+      const res  = await fetch(`/job-status/${job_id}`);
+      const json = await res.json();
+      if (json.status === "done") {
+        downloadUrl = json.download_url;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 2000)); // wait 2 s
+    }
+
+    /* 6. show download button */
+    statusEl.textContent = "✅ Finished!";
+    downloadEl.href = downloadUrl;
+    downloadEl.style.display = "inline-block";
+  });
+  </script> -->
+  <script>
+  /* ---------- tweakables ---------- */
+  const CHUNK_SIZE   = 500;        // keys per /generate-presigned-urls call
+  const MAX_PARALLEL = 8;          // simultaneous PUTs to S3
+  const POLL_EVERY   = 2_000;      // ms between /job-status polls
+  /* -------------------------------- */
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  document.getElementById("upload-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const statusEl   = document.getElementById("status");
+    const downloadEl = document.getElementById("download-btn");
+    downloadEl.style.display = "none";
+    statusEl.textContent = "";
+
+    /* 0️⃣ gather files */
+    const files = Array.from(document.getElementById("fileInput").files);
+    if (!files.length) {
+      alert("Please select at least one file.");
+      return;
+    }
+
+    /* 1️⃣ build S3 keys */
+    const ts   = Date.now();
+    const keys = files.map(f => `uploads/${ts}/${f.name}`);
+
+    /* 2️⃣ get presigned URLs in CHUNK_SIZE batches */
+    statusEl.textContent = "Requesting upload URLs…";
+    const presigned = [];   // will fill with {filename, url}
+    for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
+      const slice = keys.slice(i, i + CHUNK_SIZE);
+      const res   = await fetch("/generate-presigned-urls", {
+        method  : "POST",
+        headers : {"Content-Type":"application/json"},
+        body    : JSON.stringify({filenames: slice})
+      });
+      /* streaming endpoint returns an array – safest to parse as text first */
+      const chunkUrls = JSON.parse(await res.text());
+      presigned.push(...chunkUrls);
+      statusEl.textContent =
+        `Got ${presigned.length} / ${keys.length} upload URLs…`;
+    }
+
+    /* 3️⃣ PUT each file (with simple parallel-limit queue) */
+    statusEl.textContent = "Uploading to S3…";
+    let inFlight = 0, done = 0;
+    const uploadErrors = [];
+
+    const next = async (task) => {
+      inFlight++;
+      try { await task(); }
+      catch (err) { uploadErrors.push(err); }
+      done++;
+      statusEl.textContent =
+        `Uploading… ${done} / ${presigned.length}`;
+      inFlight--;
+      runQueue();
+    };
+
+    const queue = presigned.map(({filename, url}) => () =>
+      fetch(url, {
+        method: "PUT",
+        body  : files.find(f => f.name === filename.split("/").pop())
+      })
+    );
+
+    const runQueue = () => {
+      while (inFlight < MAX_PARALLEL && queue.length) {
+        next(queue.shift());
+      }
+    };
+    runQueue();
+
+    /* wait for all uploads to finish */
+    while (done < presigned.length) await sleep(200);
+
+    if (uploadErrors.length) {
+      statusEl.textContent = "❌ Upload failed – check console.";
+      console.error("Upload errors:", uploadErrors);
+      return;
+    }
+
+    /* 4️⃣ start the Lambda job */
+    statusEl.textContent = "Processing images…";
+    const {job_id} = await fetch("/start-job", {
+      method  : "POST",
+      headers : {"Content-Type":"application/json"},
+      body    : JSON.stringify({keys})
+    }).then(r => r.json());
+
+    /* 5️⃣ poll for completion */
+    let downloadUrl = null;
+    while (true) {
+      const res  = await fetch(`/job-status/${job_id}`);
+      const json = await res.json();
+      if (json.status === "done") {
+        downloadUrl = json.download_url;
+        break;
+      }
+      if (json.status === "error") {
+        statusEl.textContent = "❌ Processing error – check logs.";
+        return;
+      }
+      await sleep(POLL_EVERY);
+    }
+
+    /* 6️⃣ show download */
+    statusEl.textContent = "✅ Finished!";
+    downloadEl.href      = downloadUrl;
+    downloadEl.style.display = "inline-block";
+  });
+  </script>
+</body>
+</html>

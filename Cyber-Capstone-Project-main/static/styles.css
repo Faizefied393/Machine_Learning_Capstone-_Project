@@ -1,0 +1,139 @@
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f6fff2; /* Light greenish-white */
+    color: #2c5f2d; /* Deep forest green */
+    margin: 0;
+    padding: 0;
+    text-align: center;
+}
+
+/* Header */
+header {
+    background-color: #4CAF50; /* Vibrant green */
+    color: white;
+    padding: 20px;
+    font-size: 2em;
+    font-weight: bold;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Flash Messages */
+ul {
+    list-style: none;
+    padding: 10px;
+    background-color: #e8f5e9; /* Light green */
+    color: #2c5f2d;
+    border-radius: 5px;
+    display: inline-block;
+    margin-top: 20px;
+}
+
+/* Form Styling */
+form {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+    display: inline-block;
+    margin-top: 20px;
+    width: 300px;
+}
+
+input[type="file"] {
+    border: 1px solid #2c5f2d;
+    padding: 10px;
+    border-radius: 5px;
+    background-color: #e8f5e9;
+    color: #2c5f2d;
+    cursor: pointer;
+}
+
+button {
+    background-color: #4CAF50; /* Button green */
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    font-size: 1em;
+    cursor: pointer;
+    border-radius: 5px;
+    margin-top: 10px;
+    transition: background 0.3s ease-in-out;
+}
+
+button:hover {
+    background-color: #367c39; /* Darker green */
+}
+
+/* Download Link */
+a {
+    display: inline-block;
+    background-color: #2c5f2d;
+    color: white;
+    padding: 10px 15px;
+    text-decoration: none;
+    font-size: 1em;
+    border-radius: 5px;
+    margin-top: 15px;
+    transition: background 0.3s ease-in-out;
+}
+
+a:hover {
+    background-color: #1b3e1b;
+}
+
+.buttons{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border: 2px solid #2c5f2d;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.content{
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+
+.cranes, .cameras{
+    /* display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center; */
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    position: relative;
+}
+
+.crane1, .img1{
+    width: 200px;
+    height: auto; 
+    margin: 50px; 
+    grid-column: 1 / span 8;
+    grid-row: 1; 
+    padding-top: 35%; 
+    z-index: 1; 
+    border-radius: 10px; 
+    
+}
+.crane2, .img2{
+    width: 200px;
+    height: auto; 
+    margin: 50px; 
+    border-radius: 10px; 
+    grid-column: 5 / -1;
+    grid-row: 1;
+}
+
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    form {
+        width: 90%;
+    }
+}
+
+

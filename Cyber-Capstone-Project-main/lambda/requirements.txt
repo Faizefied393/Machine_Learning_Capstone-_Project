@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2  
+torchvision==0.17.2
+pandas==2.2.3 
+openpyxl
+boto3
+XlsxWriter==3.2.0 
+numpy==1.26.4  
+
+
+  
